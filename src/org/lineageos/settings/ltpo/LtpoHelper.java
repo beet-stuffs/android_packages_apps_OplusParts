@@ -9,9 +9,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
-import androidx.preference.PreferenceManager;
-
 import org.lineageos.settings.utils.FileUtils;
+import org.lineageos.settings.utils.PreferenceUtils;
 
 public final class LtpoHelper {
     private static final String TAG = "LtpoHelper";
@@ -103,6 +102,6 @@ public final class LtpoHelper {
     }
 
     private static SharedPreferences getSharedPreferences(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context);
+        return PreferenceUtils.getSharedPreferences(context);
     }
 }

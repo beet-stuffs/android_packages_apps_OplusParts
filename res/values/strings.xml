@@ -18,4 +18,25 @@
     <string name="ltpo_summary">(Experimental) Allow display to go below the default 60hz</string>
     <string name="ltpo_not_supported">LTPO control is not supported on this device</string>
 
+    <!-- Plus Key -->
+    <string name="plus_key_title">Plus Key</string>
+    <string name="plus_key_summary">Customize actions for the physical button</string>
+    <string name="plus_key_single_press_title">Single press</string>
+    <string name="plus_key_long_press_title">Long press</string>
+
+    <!-- General Feedback -->
+    <string name="button_general_category_title">Feedback</string>
+    <string name="button_vibration_feedback_title">Vibration feedback</string>
+    <string name="button_vibration_feedback_summary">Vibrate when triggering button actions</string>
+
+    <!-- Action options -->
+    <string name="action_none">None</string>
+    <string name="action_default">Launch assistant</string>
+    <string name="action_cycle_ringer">Cycle ringer modes (Ring / Vibrate / Silent)</string>
+    <string name="action_torch">Toggle flashlight</string>
+    <string name="action_dnd">Toggle Do Not Disturb</string>
+    <string name="action_camera">Open camera</string>
+    <string name="action_screenshot">Take screenshot</string>
+    <string name="action_mute_media">Toggle media mute</string>
+
 </resources>

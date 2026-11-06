@@ -5,14 +5,20 @@
 
 android_app {
     name: "OplusParts",
+    defaults: ["SettingsLibDefaults"],
 
-    srcs: ["src/**/*.java"],
+    srcs: [
+        "src/**/*.java",
+        "src/**/*.kt",
+    ],
     resource_dirs: ["res"],
     certificate: "platform",
     platform_apis: true,
     system_ext_specific: true,
+    privileged: true,
 
     static_libs: [
+        "androidx.preference_preference",
         "org.lineageos.settings.resources",
     ],
 

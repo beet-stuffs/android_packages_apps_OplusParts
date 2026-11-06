@@ -9,11 +9,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
-import androidx.preference.PreferenceManager;
-
 import com.android.internal.lineage.health.HealthInterface;
 
 import org.lineageos.settings.utils.FileUtils;
+import org.lineageos.settings.utils.PreferenceUtils;
 
 public final class BypassChargingUtils {
     private static final String TAG = "BypassChargingUtils";
@@ -151,6 +150,6 @@ public final class BypassChargingUtils {
     }
 
     private static SharedPreferences getSharedPreferences(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context);
+        return PreferenceUtils.getSharedPreferences(context);
     }
 }
