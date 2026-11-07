@@ -6,6 +6,5 @@
 <permissions>
     <privapp-permissions package="org.lineageos.settings">
         <permission name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-        <permission name="android.permission.MODIFY_AUDIO_ROUTING"/>
     </privapp-permissions>
 </permissions>
