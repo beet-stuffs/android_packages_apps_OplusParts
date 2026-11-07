@@ -37,14 +37,20 @@ import com.android.internal.os.DeviceKeyHandler
 import com.android.internal.util.ScreenshotHelper
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private val audioManager = context.getSystemService(AudioManager::class.java)!!
     private val cameraManager = context.getSystemService(CameraManager::class.java)!!
     private val notificationManager = context.getSystemService(NotificationManager::class.java)!!
-    private val screenshotHelper = ScreenshotHelper(context)
     private val vibrator = context.getSystemService(Vibrator::class.java)!!
+    private val screenshotHelper = ScreenshotHelper(context)
+
+    // Resolved on first use: these services may not be published yet when
+    // PhoneWindowManager instantiates the key handler.
+    private val keyguardManager by lazy { context.getSystemService(KeyguardManager::class.java)!! }
+    private val powerManager by lazy { context.getSystemService(PowerManager::class.java)!! }
+    private val searchManager by lazy { context.getSystemService(SearchManager::class.java)!! }
 
     // Settings package context of the current user, recreated on user switch
     @Volatile private var packageContext: Pair<Int, Context>? = null
@@ -84,7 +90,9 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private var singlePressAction = ACTION_NONE
     private var longPressAction = ACTION_NONE
 
-    private val pressState = AtomicInteger(PRESS_IDLE)
+    // Set while a long press timer is armed. The timer (main looper) and ACTION_UP (input
+    // thread) race to clear it: whoever wins decides between the long and single press.
+    private val longPressPending = AtomicBoolean(false)
     private var longPressRunnable: Runnable? = null
 
     private val torchCallback =
@@ -113,60 +121,40 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
                 event.device?.name?.contains("gpio-keys") == true)
 
     private fun handlePlusKeyEvent(event: KeyEvent): KeyEvent? {
-        // Preferences live in another package's storage: read them once per press on
-        // the initial DOWN and reuse the snapshot for repeats and the UP event, so the
-        // whole gesture is handled consistently even if the settings change mid-press.
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+        val isInitialDown = event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0
+
+        // Read the preferences once per press and reuse them for repeats and the UP event,
+        // so the whole gesture is handled consistently even if the settings change mid-press.
+        if (isInitialDown) {
             singlePressAction = getActionPreference(CONFIG_PLUS_KEY_SINGLE_PRESS, ACTION_CYCLE_RINGER)
             longPressAction = getActionPreference(CONFIG_PLUS_KEY_LONG_PRESS, ACTION_NONE)
         }
 
-        // Default assistant behavior: if no custom action, let system handle it
-        if (singlePressAction == ACTION_DEFAULT && longPressAction == ACTION_NONE) {
+        // Nothing to intercept: let the framework handle the key (assistant)
+        if (singlePressAction == ACTION_ASSISTANT && longPressAction == ACTION_NONE) {
             return event
         }
 
-        when (event.action) {
-            KeyEvent.ACTION_DOWN -> {
-                if (event.repeatCount == 0) {
-                    removeLongPressTimer()
+        if (isInitialDown) {
+            removeLongPressTimer()
+            longPressPending.set(longPressAction != ACTION_NONE)
 
-                    if (longPressAction != ACTION_NONE) {
-                        // Long press configured: post timer
-                        val action = longPressAction
-                        pressState.set(PRESS_PENDING)
-                        val runnable = Runnable {
-                            // Only fire if the key hasn't been released in the meantime.
-                            if (pressState.compareAndSet(PRESS_PENDING, PRESS_LONG_PRESSED)) {
-                                executeAction(action)
-                            }
+            if (longPressAction == ACTION_NONE) {
+                executeAction(singlePressAction)
+            } else {
+                val action = longPressAction
+                longPressRunnable =
+                    Runnable { if (longPressPending.compareAndSet(true, false)) executeAction(action) }
+                        .also {
+                            mainHandler.postDelayed(it, ViewConfiguration.getLongPressTimeout().toLong())
                         }
-                        longPressRunnable = runnable
-                        mainHandler.postDelayed(
-                            runnable,
-                            ViewConfiguration.getLongPressTimeout().toLong(),
-                        )
-                    } else {
-                        // Immediate execution on DOWN
-                        pressState.set(PRESS_IDLE)
-                        executeAction(singlePressAction)
-                    }
-                }
-                return null
             }
+        } else if (event.action == KeyEvent.ACTION_UP) {
+            removeLongPressTimer()
 
-            KeyEvent.ACTION_UP -> {
-                removeLongPressTimer()
-
-                // The long press timer runs on the main looper while key events arrive on
-                // the input thread: whoever moves the state out of PENDING first wins, so a
-                // release racing with the timeout never triggers both actions.
-                // A canceled up event (FLAG_CANCELED) means the gesture was aborted:
-                // don't fire the single-press action.
-                if (pressState.compareAndSet(PRESS_PENDING, PRESS_IDLE) && !event.isCanceled) {
-                    executeAction(singlePressAction)
-                }
-                return null
+            // A canceled UP (FLAG_CANCELED) means the gesture was aborted: no single press.
+            if (longPressPending.compareAndSet(true, false) && !event.isCanceled) {
+                executeAction(singlePressAction)
             }
         }
 
@@ -174,255 +162,172 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     }
 
     private fun removeLongPressTimer() {
-        longPressRunnable?.let {
-            mainHandler.removeCallbacks(it)
-            longPressRunnable = null
-        }
+        longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+        longPressRunnable = null
     }
 
     private fun getActionPreference(key: String, defValue: Int): Int =
-        try {
-            sharedPreferences?.getString(key, null)?.toInt() ?: defValue
-        } catch (e: Exception) {
-            defValue
-        }
+        sharedPreferences?.getString(key, null)?.toIntOrNull() ?: defValue
 
     private fun executeAction(action: Int) {
-        when (action) {
-            ACTION_DEFAULT -> launchAssistant()
-            ACTION_CYCLE_RINGER -> cycleRingerMode()
-            ACTION_TORCH -> toggleTorch()
-            ACTION_DND -> toggleDnd()
-            ACTION_CAMERA -> openCamera()
-            ACTION_SCREENSHOT -> takeScreenshot()
-            ACTION_MUTE_MEDIA -> toggleMediaMute()
-        }
-    }
-
-    private fun vibrate() {
-        if (vibrationFeedbackEnabled()) {
-            vibrator.vibrate(MODE_NORMAL_EFFECT, HARDWARE_FEEDBACK_VIBRATION_ATTRIBUTES)
-        }
-    }
-
-    private fun vibrateForRingerMode(mode: Int) {
-        if (!vibrationFeedbackEnabled()) {
+        if (action == ACTION_NONE) {
             return
         }
-        val effect =
-            when (mode) {
+        executorService.submit {
+            try {
+                when (action) {
+                    ACTION_ASSISTANT -> launchAssistant()
+                    ACTION_CYCLE_RINGER -> cycleRingerMode()
+                    ACTION_TORCH -> toggleTorch()
+                    ACTION_DND -> toggleDnd()
+                    ACTION_CAMERA -> openCamera()
+                    ACTION_SCREENSHOT -> takeScreenshot()
+                    ACTION_MUTE_MEDIA -> toggleMediaMute()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to execute action $action", e)
+            }
+        }
+    }
+
+    private fun vibrate(effect: VibrationEffect = MODE_NORMAL_EFFECT) {
+        if (sharedPreferences?.getBoolean(CONFIG_VIBRATION_FEEDBACK, true) != false) {
+            vibrator.vibrate(effect, HARDWARE_FEEDBACK_VIBRATION_ATTRIBUTES)
+        }
+    }
+
+    // All actions below run on the single threaded executor, so read-modify-write
+    // sequences (ringer mode, torch state) can't interleave between quick presses.
+
+    private fun cycleRingerMode() {
+        val nextMode =
+            when (audioManager.ringerModeInternal) {
+                AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
+                AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
+                else -> AudioManager.RINGER_MODE_NORMAL
+            }
+        audioManager.ringerModeInternal = nextMode
+
+        vibrate(
+            when (nextMode) {
                 AudioManager.RINGER_MODE_SILENT -> MODE_SILENT_EFFECT
                 AudioManager.RINGER_MODE_VIBRATE -> MODE_VIBRATION_EFFECT
                 else -> MODE_NORMAL_EFFECT
             }
-        vibrator.vibrate(effect, HARDWARE_FEEDBACK_VIBRATION_ATTRIBUTES)
-    }
-
-    private fun vibrationFeedbackEnabled(): Boolean =
-        sharedPreferences?.getBoolean(CONFIG_VIBRATION_FEEDBACK, true) ?: true
-
-    private fun cycleRingerMode() {
-        executorService.submit {
-            // Read the current mode on the executor too: reading it on the input thread
-            // raced with the previous press' pending update, so quick presses could
-            // compute the same next mode and skip a step.
-            val nextMode =
-                when (audioManager.ringerModeInternal) {
-                    AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
-                    AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
-                    else -> AudioManager.RINGER_MODE_NORMAL
-                }
-
-            audioManager.ringerModeInternal = nextMode
-
-            vibrateForRingerMode(nextMode)
-        }
+        )
     }
 
     private fun toggleTorch() {
-        executorService.submit {
-            try {
-                val cameraId =
-                    cameraManager.cameraIdList.firstOrNull { id ->
-                        cameraManager
-                            .getCameraCharacteristics(id)
-                            .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                    } ?: return@submit
+        val cameraId =
+            cameraManager.cameraIdList.firstOrNull { id ->
+                cameraManager
+                    .getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: return
 
-                // Only look at the state of the camera we toggle: other cameras (e.g. a
-                // front flash) report their own torch changes through the same callback.
-                val newTorchState = torchStates[cameraId] != true
-                cameraManager.setTorchMode(cameraId, newTorchState)
-                torchStates[cameraId] = newTorchState
+        // Only look at the state of the camera we toggle: other cameras (e.g. a
+        // front flash) report their own torch changes through the same callback.
+        val newTorchState = torchStates[cameraId] != true
+        cameraManager.setTorchMode(cameraId, newTorchState)
+        torchStates[cameraId] = newTorchState
 
-                vibrate()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to toggle torch", e)
-            }
-        }
+        vibrate()
     }
 
     private fun toggleDnd() {
-        executorService.submit {
-            try {
-                if (notificationManager.zenMode != Settings.Global.ZEN_MODE_OFF) {
-                    notificationManager.setZenMode(
-                        Settings.Global.ZEN_MODE_OFF,
-                        null,
-                        TAG,
-                        /* fromUser= */ true,
-                    )
-                } else {
-                    // Same toggle as the system DND tile: activating the manual DND mode keeps
-                    // whatever the user configured in DND settings.
-                    val zenDuration =
-                        try {
-                            Settings.Secure.getInt(
-                                context.contentResolver,
-                                Settings.Secure.ZEN_DURATION,
+        if (notificationManager.zenMode != Settings.Global.ZEN_MODE_OFF) {
+            notificationManager.setZenMode(Settings.Global.ZEN_MODE_OFF, null, TAG, /* fromUser= */ true)
+        } else {
+            // Same toggle as the system DND tile: activating the manual DND mode keeps
+            // whatever the user configured in DND settings.
+            val zenDuration =
+                Settings.Secure.getInt(
+                    context.contentResolver,
+                    Settings.Secure.ZEN_DURATION,
+                    Settings.Secure.ZEN_DURATION_FOREVER,
+                )
+            val durationConditionId =
+                when (zenDuration) {
+                    // "Ask every time" can't be prompted from here, run until off instead.
+                    Settings.Secure.ZEN_DURATION_FOREVER, Settings.Secure.ZEN_DURATION_PROMPT -> null
+                    else ->
+                        ZenModeConfig.toTimeCondition(
+                                context,
+                                zenDuration,
+                                ActivityManager.getCurrentUser(),
+                                true,
                             )
-                        } catch (e: Exception) {
-                            Settings.Secure.ZEN_DURATION_FOREVER
-                        }
-
-                    val durationConditionId =
-                        when (zenDuration) {
-                            // "Ask every time" can't be prompted from here, run until off instead.
-                            Settings.Secure.ZEN_DURATION_FOREVER, Settings.Secure.ZEN_DURATION_PROMPT ->
-                                null
-                            else ->
-                                ZenModeConfig.toTimeCondition(
-                                        context,
-                                        zenDuration,
-                                        ActivityManager.getCurrentUser(),
-                                        true,
-                                    )
-                                    .id
-                        }
-
-                    notificationManager.setZenMode(
-                        Settings.Global.ZEN_MODE_IMPORTANT_INTERRUPTIONS,
-                        durationConditionId,
-                        TAG,
-                        /* fromUser= */ true,
-                    )
+                            .id
                 }
-
-                vibrate()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to toggle DND", e)
-            }
+            notificationManager.setZenMode(
+                Settings.Global.ZEN_MODE_IMPORTANT_INTERRUPTIONS,
+                durationConditionId,
+                TAG,
+                /* fromUser= */ true,
+            )
         }
+
+        vibrate()
     }
 
     private fun openCamera() {
-        executorService.submit {
-            try {
-                // Starting the camera behind an off display leaves it invisible:
-                // wake the screen first, like the system's own camera shortcuts
-                // (WAKE_REASON_CAMERA_LAUNCH). Other actions stay screen-off safe.
-                val powerManager = context.getSystemService(PowerManager::class.java)
-                if (powerManager?.isInteractive == false) {
-                    powerManager.wakeUp(
-                        SystemClock.uptimeMillis(),
-                        PowerManager.WAKE_REASON_CAMERA_LAUNCH,
-                        TAG,
-                    )
-                }
-
-                val keyguardManager = context.getSystemService(KeyguardManager::class.java)
-                val isLocked = keyguardManager?.isKeyguardLocked ?: false
-                val action =
-                    if (isLocked) {
-                        MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE
-                    } else {
-                        MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
-                    }
-                val intent =
-                    Intent(action).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    }
-                context.startActivityAsUser(intent, UserHandle.CURRENT)
-
-                vibrate()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to open camera", e)
-            }
+        // Starting the camera behind an off display leaves it invisible: wake the screen
+        // first, like the system's own camera shortcuts. Other actions stay screen-off safe.
+        if (!powerManager.isInteractive) {
+            powerManager.wakeUp(SystemClock.uptimeMillis(), PowerManager.WAKE_REASON_CAMERA_LAUNCH, TAG)
         }
+
+        val action =
+            if (keyguardManager.isKeyguardLocked) {
+                MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE
+            } else {
+                MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
+            }
+        context.startActivityAsUser(
+            Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            UserHandle.CURRENT,
+        )
+
+        vibrate()
     }
 
     private fun takeScreenshot() {
-        executorService.submit {
-            try {
-                screenshotHelper.takeScreenshot(
-                    WindowManager.ScreenshotSource.SCREENSHOT_OTHER,
-                    mainHandler,
-                    null,
-                )
+        screenshotHelper.takeScreenshot(WindowManager.ScreenshotSource.SCREENSHOT_OTHER, mainHandler, null)
 
-                vibrate()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to take screenshot", e)
-            }
-        }
+        vibrate()
     }
 
     private fun toggleMediaMute() {
-        executorService.submit {
-            try {
-                val isMuted = audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
-                val newMute = !isMuted
-                audioManager.adjustStreamVolume(
-                    AudioManager.STREAM_MUSIC,
-                    if (newMute) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE,
-                    0,
-                )
+        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, 0)
 
-                vibrate()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to toggle media mute", e)
-            }
-        }
+        vibrate()
     }
 
     private fun launchAssistant() {
-        executorService.submit {
-            try {
-                // Same path as PhoneWindowManager.launchAssistAction(): starts the default
-                // voice assistant through the VoiceInteractionManagerService instead of
-                // hoping ACTION_VOICE_COMMAND resolves to an activity.
-                val args =
-                    Bundle().apply {
-                        putInt(AssistUtils.INVOCATION_TYPE_KEY, AssistUtils.INVOCATION_TYPE_ASSIST_BUTTON)
-                    }
-                context.getSystemService(SearchManager::class.java)?.launchAssist(args)
-                    ?: Log.e(TAG, "SearchManager unavailable, cannot launch assistant")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to launch voice assistant", e)
+        // Same path as PhoneWindowManager.launchAssistAction(): starts the default voice
+        // assistant through the VoiceInteractionManagerService.
+        searchManager.launchAssist(
+            Bundle().apply {
+                putInt(AssistUtils.INVOCATION_TYPE_KEY, AssistUtils.INVOCATION_TYPE_ASSIST_BUTTON)
             }
-        }
+        )
     }
 
     companion object {
         private const val TAG = "PlusKeyHandler"
-
-        // Long press state of the current key press
-        private const val PRESS_IDLE = 0
-        private const val PRESS_PENDING = 1
-        private const val PRESS_LONG_PRESSED = 2
         private const val PACKAGE_NAME = "org.lineageos.settings"
 
         // Hardware scancode for OnePlus 15 (infiniti) Plus key
         private const val SCANCODE_PLUS_KEY = 735
 
-        // Preference keys
+        // Preference keys, must match res/xml/plus_key_panel.xml
         private const val CONFIG_PLUS_KEY_SINGLE_PRESS = "config_plus_key_single_press"
         private const val CONFIG_PLUS_KEY_LONG_PRESS = "config_plus_key_long_press"
         private const val CONFIG_VIBRATION_FEEDBACK = "config_vibration_feedback"
 
-        // Action IDs (values must match the entry values in plus_key_action_entry_values)
+        // Action IDs, must match plus_key_action_entry_values in res/values/arrays.xml
         private const val ACTION_NONE = -1
-        private const val ACTION_DEFAULT = 0
+        private const val ACTION_ASSISTANT = 0
         private const val ACTION_CYCLE_RINGER = 1
         private const val ACTION_TORCH = 2
         private const val ACTION_DND = 3
@@ -430,11 +335,9 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
         private const val ACTION_SCREENSHOT = 5
         private const val ACTION_MUTE_MEDIA = 6
 
-        // Vibration attributes
         private val HARDWARE_FEEDBACK_VIBRATION_ATTRIBUTES =
             VibrationAttributes.createForUsage(VibrationAttributes.USAGE_HARDWARE_FEEDBACK)
 
-        // Vibration effects
         private val MODE_NORMAL_EFFECT = VibrationEffect.get(VibrationEffect.EFFECT_HEAVY_CLICK)
         private val MODE_VIBRATION_EFFECT = VibrationEffect.get(VibrationEffect.EFFECT_DOUBLE_CLICK)
         private val MODE_SILENT_EFFECT = VibrationEffect.get(VibrationEffect.EFFECT_TICK)
