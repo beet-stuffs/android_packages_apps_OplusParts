@@ -34,6 +34,7 @@ import com.android.internal.app.AssistUtils
 import com.android.internal.os.DeviceKeyHandler
 import com.android.internal.util.ScreenshotHelper
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private val audioManager = context.getSystemService(AudioManager::class.java)!!
@@ -72,7 +73,7 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private var singlePressAction = ACTION_NONE
     private var longPressAction = ACTION_NONE
 
-    private var isLongPressTriggered = false
+    private val pressState = AtomicInteger(PRESS_IDLE)
     private var longPressRunnable: Runnable? = null
 
     private val torchCallback =
@@ -117,14 +118,17 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
                 if (event.repeatCount == 0) {
-                    isLongPressTriggered = false
+                    removeLongPressTimer()
 
                     if (longPressAction != ACTION_NONE) {
                         // Long press configured: post timer
-                        longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                        val action = longPressAction
+                        pressState.set(PRESS_PENDING)
                         val runnable = Runnable {
-                            isLongPressTriggered = true
-                            executeAction(longPressAction)
+                            // Only fire if the key hasn't been released in the meantime.
+                            if (pressState.compareAndSet(PRESS_PENDING, PRESS_LONG_PRESSED)) {
+                                executeAction(action)
+                            }
                         }
                         longPressRunnable = runnable
                         mainHandler.postDelayed(
@@ -133,6 +137,7 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
                         )
                     } else {
                         // Immediate execution on DOWN
+                        pressState.set(PRESS_IDLE)
                         executeAction(singlePressAction)
                     }
                 }
@@ -142,9 +147,12 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
             KeyEvent.ACTION_UP -> {
                 removeLongPressTimer()
 
+                // The long press timer runs on the main looper while key events arrive on
+                // the input thread: whoever moves the state out of PENDING first wins, so a
+                // release racing with the timeout never triggers both actions.
                 // A canceled up event (FLAG_CANCELED) means the gesture was aborted:
                 // don't fire the single-press action.
-                if (longPressAction != ACTION_NONE && !isLongPressTriggered && !event.isCanceled) {
+                if (pressState.compareAndSet(PRESS_PENDING, PRESS_IDLE) && !event.isCanceled) {
                     executeAction(singlePressAction)
                 }
                 return null
@@ -383,6 +391,11 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
 
     companion object {
         private const val TAG = "PlusKeyHandler"
+
+        // Long press state of the current key press
+        private const val PRESS_IDLE = 0
+        private const val PRESS_PENDING = 1
+        private const val PRESS_LONG_PRESSED = 2
         private const val PACKAGE_NAME = "org.lineageos.settings"
 
         // Hardware scancode for OnePlus 15 (infiniti) Plus key
