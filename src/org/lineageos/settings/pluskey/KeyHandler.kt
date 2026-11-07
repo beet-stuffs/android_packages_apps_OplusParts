@@ -222,7 +222,6 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
                     else -> AudioManager.RINGER_MODE_NORMAL
                 }
 
-            notificationManager.setZenMode(Settings.Global.ZEN_MODE_OFF, null, TAG)
             audioManager.ringerModeInternal = nextMode
 
             vibrateForRingerMode(nextMode)
