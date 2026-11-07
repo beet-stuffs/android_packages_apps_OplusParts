@@ -5,9 +5,6 @@
 -->
 <resources>
 
-    <!-- App name -->
-    <string name="device_settings_app_name">Device Settings</string>
-
     <!-- Bypass charging -->
     <string name="bypass_charging_title">Bypass charging</string>
     <string name="bypass_charging_summary">Power the device directly while plugged in and avoid charging the battery. Enabling this will disable Lineage charging control.</string>
