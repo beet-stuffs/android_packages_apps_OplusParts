@@ -34,7 +34,7 @@
 
     <!-- Action options -->
     <string name="action_none">None</string>
-    <string name="action_default">Launch Assistant (Default)</string>
+    <string name="action_default">Launch assistant</string>
     <string name="action_cycle_ringer">Cycle ringer modes (Ring / Vibrate / Silent)</string>
     <string name="action_torch">Toggle flashlight</string>
     <string name="action_dnd">Toggle Do Not Disturb</string>
