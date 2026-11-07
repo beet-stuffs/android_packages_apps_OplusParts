@@ -54,26 +54,25 @@ public final class PreferenceUtils {
             final Context ceContext = context.createCredentialProtectedStorageContext();
             final Context deContext = context.createDeviceProtectedStorageContext();
 
-            try {
-                final Map<String, ?> legacy =
-                        ceContext.getSharedPreferences(name, Context.MODE_PRIVATE).getAll();
-                if (!legacy.isEmpty()) {
+            // Nothing left to migrate: skip loading and deleting a missing file.
+            if (ceContext.getSharedPreferencesPath(name).exists()) {
+                try {
                     final SharedPreferences target =
                             deContext.getSharedPreferences(name, Context.MODE_PRIVATE);
                     final SharedPreferences.Editor editor = target.edit();
-                    for (Map.Entry<String, ?> entry : legacy.entrySet()) {
+                    for (Map.Entry<String, ?> entry : ceContext
+                            .getSharedPreferences(name, Context.MODE_PRIVATE).getAll().entrySet()) {
                         // Keep anything already written to device protected storage.
-                        if (target.contains(entry.getKey())) {
-                            continue;
+                        if (!target.contains(entry.getKey())) {
+                            putValue(editor, entry.getKey(), entry.getValue());
                         }
-                        putValue(editor, entry.getKey(), entry.getValue());
                     }
                     editor.commit();
-                    Log.i(TAG, "Migrated " + legacy.size() + " preferences to DE storage");
+                    ceContext.deleteSharedPreferences(name);
+                    Log.i(TAG, "Migrated preferences to DE storage");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to migrate preferences to DE storage", e);
                 }
-                ceContext.deleteSharedPreferences(name);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to migrate preferences to DE storage", e);
             }
 
             sMigrated = true;
