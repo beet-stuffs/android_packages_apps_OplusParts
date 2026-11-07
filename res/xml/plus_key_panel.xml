@@ -7,13 +7,10 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <PreferenceCategory
-        android:key="plus_key_category"
-        android:title="@string/plus_key_title">
+    <PreferenceCategory android:title="@string/plus_key_title">
 
         <ListPreference
             android:key="config_plus_key_single_press"
-            android:dialogTitle="@string/plus_key_single_press_title"
             android:entries="@array/plus_key_action_entries"
             android:entryValues="@array/plus_key_action_entry_values"
             android:defaultValue="1"
@@ -22,7 +19,6 @@
 
         <ListPreference
             android:key="config_plus_key_long_press"
-            android:dialogTitle="@string/plus_key_long_press_title"
             android:entries="@array/plus_key_action_entries"
             android:entryValues="@array/plus_key_action_entry_values"
             android:defaultValue="-1"
@@ -31,9 +27,7 @@
 
     </PreferenceCategory>
 
-    <PreferenceCategory
-        android:key="general_category"
-        android:title="@string/button_general_category_title">
+    <PreferenceCategory android:title="@string/button_general_category_title">
 
         <SwitchPreferenceCompat
             android:key="config_vibration_feedback"
