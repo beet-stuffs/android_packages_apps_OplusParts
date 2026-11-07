@@ -2,8 +2,7 @@
   *;
 }
 
-# Loaded reflectively by PhoneWindowManager (config_deviceKeyHandlerClasses),
-# so R8 must not strip or rename it.
--keep class org.lineageos.settings.pluskey.** {
-  *;
+# Instantiated reflectively by PhoneWindowManager (config_deviceKeyHandlerClasses)
+-keep class org.lineageos.settings.pluskey.KeyHandler {
+  <init>(android.content.Context);
 }
