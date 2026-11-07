@@ -211,15 +211,17 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
         sharedPreferences.getBoolean(CONFIG_VIBRATION_FEEDBACK, true)
 
     private fun cycleRingerMode() {
-        val currentMode = audioManager.ringerModeInternal
-        val nextMode =
-            when (currentMode) {
-                AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
-                AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
-                else -> AudioManager.RINGER_MODE_NORMAL
-            }
-
         executorService.submit {
+            // Read the current mode on the executor too: reading it on the input thread
+            // raced with the previous press' pending update, so quick presses could
+            // compute the same next mode and skip a step.
+            val nextMode =
+                when (audioManager.ringerModeInternal) {
+                    AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
+                    AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
+                    else -> AudioManager.RINGER_MODE_NORMAL
+                }
+
             notificationManager.setZenMode(Settings.Global.ZEN_MODE_OFF, null, TAG)
             audioManager.ringerModeInternal = nextMode
 
