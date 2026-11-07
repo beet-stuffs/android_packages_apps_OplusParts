@@ -86,9 +86,13 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     // Torch state per camera id, as reported by the torch callback
     private val torchStates = ConcurrentHashMap<String, Boolean>()
 
-    // Actions snapshotted on the initial ACTION_DOWN of the current press
+    // Camera used for the torch, looked up once on the executor
+    private var flashCameraId: String? = null
+
+    // Preferences snapshotted on the initial ACTION_DOWN of the current press
     private var singlePressAction = ACTION_NONE
     private var longPressAction = ACTION_NONE
+    @Volatile private var vibrationFeedback = true
 
     // Set while a long press timer is armed. The timer (main looper) and ACTION_UP (input
     // thread) race to clear it: whoever wins decides between the long and single press.
@@ -103,10 +107,14 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
         }
 
     init {
-        try {
-            cameraManager.registerTorchCallback(torchCallback, mainHandler)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to register torch callback", e)
+        // Connecting to cameraserver is binder work: keep it off the system_server
+        // startup path, and get torch updates on the executor rather than the main looper.
+        executorService.submit {
+            try {
+                cameraManager.registerTorchCallback(executorService, torchCallback)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to register torch callback", e)
+            }
         }
     }
 
@@ -126,8 +134,10 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
         // Read the preferences once per press and reuse them for repeats and the UP event,
         // so the whole gesture is handled consistently even if the settings change mid-press.
         if (isInitialDown) {
-            singlePressAction = getActionPreference(CONFIG_PLUS_KEY_SINGLE_PRESS, ACTION_CYCLE_RINGER)
-            longPressAction = getActionPreference(CONFIG_PLUS_KEY_LONG_PRESS, ACTION_NONE)
+            val prefs = sharedPreferences
+            singlePressAction = prefs.getAction(CONFIG_PLUS_KEY_SINGLE_PRESS, ACTION_CYCLE_RINGER)
+            longPressAction = prefs.getAction(CONFIG_PLUS_KEY_LONG_PRESS, ACTION_NONE)
+            vibrationFeedback = prefs?.getBoolean(CONFIG_VIBRATION_FEEDBACK, true) ?: true
         }
 
         // Nothing to intercept: let the framework handle the key (assistant)
@@ -166,8 +176,8 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
         longPressRunnable = null
     }
 
-    private fun getActionPreference(key: String, defValue: Int): Int =
-        sharedPreferences?.getString(key, null)?.toIntOrNull() ?: defValue
+    private fun SharedPreferences?.getAction(key: String, defValue: Int): Int =
+        this?.getString(key, null)?.toIntOrNull() ?: defValue
 
     private fun executeAction(action: Int) {
         if (action == ACTION_NONE) {
@@ -191,7 +201,7 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     }
 
     private fun vibrate(effect: VibrationEffect = MODE_NORMAL_EFFECT) {
-        if (sharedPreferences?.getBoolean(CONFIG_VIBRATION_FEEDBACK, true) != false) {
+        if (vibrationFeedback) {
             vibrator.vibrate(effect, HARDWARE_FEEDBACK_VIBRATION_ATTRIBUTES)
         }
     }
@@ -219,11 +229,15 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
 
     private fun toggleTorch() {
         val cameraId =
-            cameraManager.cameraIdList.firstOrNull { id ->
-                cameraManager
-                    .getCameraCharacteristics(id)
-                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-            } ?: return
+            flashCameraId
+                ?: cameraManager.cameraIdList
+                    .firstOrNull { id ->
+                        cameraManager
+                            .getCameraCharacteristics(id)
+                            .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                    }
+                    ?.also { flashCameraId = it }
+                ?: return
 
         // Only look at the state of the camera we toggle: other cameras (e.g. a
         // front flash) report their own torch changes through the same callback.
