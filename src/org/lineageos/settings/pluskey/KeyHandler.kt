@@ -35,6 +35,7 @@ import android.view.WindowManager
 import com.android.internal.app.AssistUtils
 import com.android.internal.os.DeviceKeyHandler
 import com.android.internal.util.ScreenshotHelper
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -76,7 +77,8 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private val executorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var isTorchOn = false
+    // Torch state per camera id, as reported by the torch callback
+    private val torchStates = ConcurrentHashMap<String, Boolean>()
 
     // Actions snapshotted on the initial ACTION_DOWN of the current press
     private var singlePressAction = ACTION_NONE
@@ -88,7 +90,7 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private val torchCallback =
         object : CameraManager.TorchCallback() {
             override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
-                isTorchOn = enabled
+                torchStates[cameraId] = enabled
             }
         }
 
@@ -247,9 +249,11 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
                             .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
                     } ?: return@submit
 
-                val newTorchState = !isTorchOn
+                // Only look at the state of the camera we toggle: other cameras (e.g. a
+                // front flash) report their own torch changes through the same callback.
+                val newTorchState = torchStates[cameraId] != true
                 cameraManager.setTorchMode(cameraId, newTorchState)
-                isTorchOn = newTorchState
+                torchStates[cameraId] = newTorchState
 
                 vibrate()
             } catch (e: Exception) {
