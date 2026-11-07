@@ -67,6 +67,11 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var isTorchOn = false
+
+    // Actions snapshotted on the initial ACTION_DOWN of the current press
+    private var singlePressAction = ACTION_NONE
+    private var longPressAction = ACTION_NONE
+
     private var isLongPressTriggered = false
     private var longPressRunnable: Runnable? = null
 
@@ -96,8 +101,13 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
                 event.device?.name?.contains("gpio-keys") == true)
 
     private fun handlePlusKeyEvent(event: KeyEvent): KeyEvent? {
-        val singlePressAction = getActionPreference(CONFIG_PLUS_KEY_SINGLE_PRESS, ACTION_CYCLE_RINGER)
-        val longPressAction = getActionPreference(CONFIG_PLUS_KEY_LONG_PRESS, ACTION_NONE)
+        // Preferences live in another package's storage: read them once per press on
+        // the initial DOWN and reuse the snapshot for repeats and the UP event, so the
+        // whole gesture is handled consistently even if the settings change mid-press.
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            singlePressAction = getActionPreference(CONFIG_PLUS_KEY_SINGLE_PRESS, ACTION_CYCLE_RINGER)
+            longPressAction = getActionPreference(CONFIG_PLUS_KEY_LONG_PRESS, ACTION_NONE)
+        }
 
         // Default assistant behavior: if no custom action, let system handle it
         if (singlePressAction == ACTION_DEFAULT && longPressAction == ACTION_NONE) {
