@@ -88,11 +88,12 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     override fun handleKeyEvent(event: KeyEvent): KeyEvent? =
         if (isPlusKey(event)) handlePlusKeyEvent(event) else event
 
-    private fun isPlusKey(event: KeyEvent): Boolean {
-        val deviceName = event.device?.name ?: ""
-        return event.scanCode == SCANCODE_PLUS_KEY ||
-            (event.keyCode == KeyEvent.KEYCODE_ASSIST && deviceName.contains("gpio-keys"))
-    }
+    // Runs for every key event on the input path: keep the cheap checks first and
+    // only resolve the input device when the keycode can actually match.
+    private fun isPlusKey(event: KeyEvent): Boolean =
+        event.scanCode == SCANCODE_PLUS_KEY ||
+            (event.keyCode == KeyEvent.KEYCODE_ASSIST &&
+                event.device?.name?.contains("gpio-keys") == true)
 
     private fun handlePlusKeyEvent(event: KeyEvent): KeyEvent? {
         val singlePressAction = getActionPreference(CONFIG_PLUS_KEY_SINGLE_PRESS, ACTION_CYCLE_RINGER)
