@@ -12,6 +12,7 @@ import android.app.NotificationManager
 import android.app.SearchManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
@@ -20,6 +21,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.os.UserHandle
 import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -43,26 +45,33 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     private val screenshotHelper = ScreenshotHelper(context)
     private val vibrator = context.getSystemService(Vibrator::class.java)!!
 
-    private val packageContext: Context by lazy {
-        try {
-            val pkgCtx = context.createPackageContext(PACKAGE_NAME, 0)
-            if (!pkgCtx.isDeviceProtectedStorage) {
-                pkgCtx.createDeviceProtectedStorageContext()
-            } else {
-                pkgCtx
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create package context", e)
+    // Settings package context of the current user, recreated on user switch
+    @Volatile private var packageContext: Pair<Int, Context>? = null
+
+    private fun getPackageContext(): Context? {
+        val userId = ActivityManager.getCurrentUser()
+        packageContext?.let { (cachedUserId, pkgCtx) ->
+            if (cachedUserId == userId) return pkgCtx
+        }
+        return try {
             context
+                .createPackageContextAsUser(PACKAGE_NAME, 0, UserHandle.of(userId))
+                .createDeviceProtectedStorageContext()
+                .also { packageContext = userId to it }
+        } catch (e: Exception) {
+            // Don't cache failures, and never fall back to system_server's own storage.
+            Log.e(TAG, "Failed to create package context for user $userId", e)
+            null
         }
     }
 
-    private val sharedPreferences
+    private val sharedPreferences: SharedPreferences?
         get() =
-            packageContext.getSharedPreferences(
-                packageContext.packageName + "_preferences",
-                Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS,
-            )
+            getPackageContext()
+                ?.getSharedPreferences(
+                    PACKAGE_NAME + "_preferences",
+                    Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS,
+                )
 
     private val executorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -171,7 +180,7 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
 
     private fun getActionPreference(key: String, defValue: Int): Int =
         try {
-            sharedPreferences.getString(key, defValue.toString())!!.toInt()
+            sharedPreferences?.getString(key, null)?.toInt() ?: defValue
         } catch (e: Exception) {
             defValue
         }
@@ -208,7 +217,7 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
     }
 
     private fun vibrationFeedbackEnabled(): Boolean =
-        sharedPreferences.getBoolean(CONFIG_VIBRATION_FEEDBACK, true)
+        sharedPreferences?.getBoolean(CONFIG_VIBRATION_FEEDBACK, true) ?: true
 
     private fun cycleRingerMode() {
         executorService.submit {
@@ -329,7 +338,7 @@ class KeyHandler(private val context: Context) : DeviceKeyHandler {
                     Intent(action).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     }
-                context.startActivity(intent)
+                context.startActivityAsUser(intent, UserHandle.CURRENT)
 
                 vibrate()
             } catch (e: Exception) {
