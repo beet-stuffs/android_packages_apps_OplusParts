@@ -26,6 +26,7 @@ import org.lineageos.settings.battery.BypassChargingUtils;
 import org.lineageos.settings.ltpo.LtpoHelper;
 import org.lineageos.settings.otg.ForceOtgUtils;
 import org.lineageos.settings.pocket.PocketModeService;
+import org.lineageos.settings.utils.SettingsEntries;
 
 public class BootCompletedReceiver extends BroadcastReceiver {
 
@@ -40,5 +41,6 @@ public class BootCompletedReceiver extends BroadcastReceiver {
         ForceOtgUtils.restoreForceOtg(context);
         LtpoHelper.restoreLtpo(context);
         PocketModeService.startIfSupported(context);
+        SettingsEntries.update(context);
     }
 }
