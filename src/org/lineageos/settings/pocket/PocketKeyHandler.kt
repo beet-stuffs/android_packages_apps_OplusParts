@@ -28,9 +28,9 @@ import com.android.internal.os.DeviceKeyHandler
  * Drops touchscreen key events (double tap to wake, touchscreen gestures) while pocket mode is
  * enabled, the screen is off or dozing and the proximity sensor is covered.
  *
- * Loaded into system_server through config_deviceKeyHandlerClasses. List it before other key
- * handlers (e.g. TouchGestures) so they never see the dropped events. With pocket mode off it
- * passes everything through.
+ * Runs in system_server through PartsKeyHandler, which devices list before other key handlers
+ * (e.g. TouchGestures) so they never see the dropped events. With pocket mode off it passes
+ * everything through.
  */
 class PocketKeyHandler(private val context: Context) : DeviceKeyHandler {
     private val handler = Handler(Looper.getMainLooper())

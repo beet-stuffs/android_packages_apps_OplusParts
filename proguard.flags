@@ -2,12 +2,12 @@
   *;
 }
 
-# Instantiated reflectively by PhoneWindowManager (config_deviceKeyHandlerClasses)
+# PartsKeyHandler is instantiated reflectively by PhoneWindowManager
+# (config_deviceKeyHandlerClasses) and loads these by name (config_partsKeyHandlers).
 -keep class org.lineageos.settings.pluskey.KeyHandler {
   <init>(android.content.Context);
 }
 
-# PocketKeyHandler is loaded the same way and uses PocketModeService's helpers.
 -keep class org.lineageos.settings.pocket.** {
   *;
 }

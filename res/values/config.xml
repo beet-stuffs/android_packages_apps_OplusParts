@@ -4,6 +4,13 @@
     SPDX-License-Identifier: Apache-2.0
 -->
 <resources>
+    <!-- Key handlers run by PartsKeyHandler, in order. Devices list PartsKeyHandler once and
+         first in config_deviceKeyHandlerClasses and pick the handlers they need here, e.g. add
+         org.lineageos.settings.pluskey.KeyHandler on devices with a Plus key. -->
+    <string-array name="config_partsKeyHandlers" translatable="false">
+        <item>org.lineageos.settings.pocket.PocketKeyHandler</item>
+    </string-array>
+
     <!-- Pocket mode. Everything below is device tunable through overlays. -->
 
     <!-- Whether pocket mode is available. It also needs a proximity sensor. -->
