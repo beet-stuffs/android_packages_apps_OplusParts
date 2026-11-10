@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 The LineageOS Project
+    SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <!-- Pocket mode. Everything below is device tunable through overlays. -->
+
+    <!-- Whether pocket mode is available. It also needs a proximity sensor. -->
+    <bool name="config_pocketModeSupported">true</bool>
+
+    <!-- Default of the pocket_mode_enabled setting (Settings.System). -->
+    <bool name="config_pocketModeDefaultEnabled">true</bool>
+
+    <!-- String type of the sensor used to detect the pocket. Leave empty to use the default
+         proximity sensor. A wake-up variant is preferred when both exist. -->
+    <string name="config_pocketModeSensorType" translatable="false"></string>
+
+    <!-- How long after the screen turns on a "near" reading still counts as a wake in the
+         pocket. Covers non wake-up sensors that only report once the system resumed. -->
+    <integer name="config_pocketModeWakeCheckTimeoutMs">500</integer>
+
+    <!-- How long the sensor needs to stay uncovered before touches are allowed again. -->
+    <integer name="config_pocketModeExitDelayMs">300</integer>
+
+    <!-- Put the device back to sleep if it stays covered this long after waking up in the
+         pocket. 0 keeps the screen on until it times out normally. -->
+    <integer name="config_pocketModeSleepTimeoutMs">5000</integer>
+
+    <!-- Names of input devices that send touchscreen gesture keys (double tap to wake,
+         gestures) without being the touchscreen itself. Key events from the touchscreen are
+         always dropped in a pocket. -->
+    <string-array name="config_pocketModeGestureInputDevices" translatable="false" />
+
+    <!-- Press and hold duration that dismisses the pocket overlay, for a covered or faulty
+         sensor. 0 disables it. -->
+    <integer name="config_pocketModeDismissHoldMs">1500</integer>
+</resources>

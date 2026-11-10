@@ -6,3 +6,8 @@
 -keep class org.lineageos.settings.pluskey.KeyHandler {
   <init>(android.content.Context);
 }
+
+# PocketKeyHandler is loaded the same way and uses PocketModeService's helpers.
+-keep class org.lineageos.settings.pocket.** {
+  *;
+}

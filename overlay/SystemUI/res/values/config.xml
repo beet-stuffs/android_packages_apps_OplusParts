@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: The LineageOS Project
+    SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <!-- Pocket mode while dozing: SystemUI drops double tap and (UDFPS) long press doze
+         events while the proximity sensor is covered. -->
+    <bool name="doze_double_tap_proximity_check">true</bool>
+    <bool name="doze_long_press_proximity_check">true</bool>
+</resources>
