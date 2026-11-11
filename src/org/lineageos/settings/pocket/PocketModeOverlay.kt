@@ -20,7 +20,8 @@ import org.lineageos.settings.R
  * Full screen window that consumes every touch while the device is in a pocket.
  *
  * TYPE_SECURE_SYSTEM_OVERLAY sits above the keyguard and SystemUI's UDFPS overlay, so touches
- * never reach the lockscreen, apps or the under-display fingerprint area.
+ * never reach the lockscreen or apps. The fingerprint sensor doesn't need touches to capture,
+ * see PocketFingerprintBlocker.
  */
 internal class PocketModeOverlay(
     private val context: Context,

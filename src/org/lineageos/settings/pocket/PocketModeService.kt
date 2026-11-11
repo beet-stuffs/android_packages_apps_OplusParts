@@ -36,8 +36,10 @@ import org.lineageos.settings.R
  *    key handler sees them. This service keeps the pocket state while the screen is not on so
  *    it is known the moment the screen wakes up.
  *  - Woken up anyway (power key, fingerprint, touch gesture keys) while covered: a secure
- *    overlay swallows every touch, including the under-display fingerprint area, until the
- *    sensor is uncovered. If it stays covered the device goes back to sleep.
+ *    overlay swallows every touch until the sensor is uncovered. If it stays covered the
+ *    device goes back to sleep.
+ *  - Under-display fingerprint sensors capture on their own, so fingerprint unlock is turned
+ *    off while in the pocket, see PocketFingerprintBlocker.
  */
 class PocketModeService : Service(), SensorEventListener {
 
@@ -47,6 +49,7 @@ class PocketModeService : Service(), SensorEventListener {
     private lateinit var powerManager: PowerManager
     private lateinit var sensorManager: SensorManager
     private lateinit var overlay: PocketModeOverlay
+    private lateinit var fingerprintBlocker: PocketFingerprintBlocker
     private var sensor: Sensor? = null
 
     private var enabled = false
@@ -89,6 +92,7 @@ class PocketModeService : Service(), SensorEventListener {
         displayManager = getSystemService(DisplayManager::class.java)!!
         powerManager = getSystemService(PowerManager::class.java)!!
         sensorManager = getSystemService(SensorManager::class.java)!!
+        fingerprintBlocker = PocketFingerprintBlocker(this)
         overlay = PocketModeOverlay(this, resources.getInteger(R.integer.config_pocketModeDismissHoldMs)) {
             Log.i(TAG, "overlay dismissed by the user")
             hideOverlay()
@@ -108,10 +112,12 @@ class PocketModeService : Service(), SensorEventListener {
     }
 
     override fun onDestroy() {
+        created = false
         contentResolver.unregisterContentObserver(settingObserver)
         displayManager.unregisterDisplayListener(displayListener)
         setSensorRegistered(false)
         hideOverlay()
+        fingerprintBlocker.restore()
         super.onDestroy()
     }
 
@@ -160,6 +166,14 @@ class PocketModeService : Service(), SensorEventListener {
         setSensorRegistered(
             enabled && (displayState != Display.STATE_ON || overlay.isShowing || inWakeCheck)
         )
+        updateFingerprintBlock()
+    }
+
+    // In the pocket with the screen off, or with touches blocked after waking up.
+    private fun updateFingerprintBlock() {
+        fingerprintBlocker.setBlocked(
+            enabled && near && (displayState != Display.STATE_ON || overlay.isShowing)
+        )
     }
 
     private fun setSensorRegistered(register: Boolean) {
@@ -189,6 +203,7 @@ class PocketModeService : Service(), SensorEventListener {
             handler.removeCallbacks(hideOverlayRunnable)
             handler.postDelayed(hideOverlayRunnable, exitDelayMs)
         }
+        updateFingerprintBlock()
     }
 
     override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
@@ -258,6 +273,7 @@ class PocketModeService : Service(), SensorEventListener {
 
         @JvmStatic
         fun startIfSupported(context: Context) {
+            PocketFingerprintBlocker.restoreIfNeeded(context)
             if (isSupported(context)) {
                 context.startService(Intent(context, PocketModeService::class.java))
             }
