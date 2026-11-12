@@ -55,21 +55,16 @@
                 android:resource="@string/plus_key_summary" />
         </activity>
 
-        <!-- Pocket mode (Display > Pocket mode) -->
-        <activity
-            android:name=".pocket.PocketModeSettingsActivity"
-            android:label="@string/pocket_mode_title"
+        <!-- Pocket mode (Display > Other display controls) -->
+        <provider
+            android:name=".pocket.PocketModeEntriesProvider"
+            android:authorities="org.lineageos.settings.pocket"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.android.settings.action.IA_SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <meta-data
-                android:name="com.android.settings.category"
-                android:value="com.android.settings.category.ia.display" />
-            <meta-data
-                android:name="com.android.settings.summary"
-                android:resource="@string/pocket_mode_summary" />
-        </activity>
+        </provider>
 
         <service
             android:name=".pocket.PocketModeService"

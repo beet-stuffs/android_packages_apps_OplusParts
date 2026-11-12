@@ -11,11 +11,11 @@ import android.content.pm.PackageManager
 import android.util.Log
 import org.lineageos.settings.R
 import org.lineageos.settings.pluskey.PlusKeySettingsActivity
+import org.lineageos.settings.pocket.PocketModeEntriesProvider
 import org.lineageos.settings.pocket.PocketModeService
-import org.lineageos.settings.pocket.PocketModeSettingsActivity
 
 /**
- * Hides Settings entries for features the device doesn't have, by disabling their activity.
+ * Hides Settings entries for features the device doesn't have, by disabling their component.
  * Settings only shows IA_SETTINGS entries whose component is enabled.
  */
 object SettingsEntries {
@@ -31,7 +31,7 @@ object SettingsEntries {
                 .contains(PLUS_KEY_HANDLER)
         )
         setEnabled(
-            context, PocketModeSettingsActivity::class.java,
+            context, PocketModeEntriesProvider::class.java,
             PocketModeService.isSupported(context)
         )
     }

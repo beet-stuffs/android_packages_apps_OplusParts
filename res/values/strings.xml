@@ -42,7 +42,7 @@
     <!-- Pocket mode -->
     <string name="pocket_mode_title">Pocket mode</string>
     <string name="pocket_mode_summary">Block touches and gestures while the device is in a pocket or bag</string>
-    <string name="pocket_mode_footer">While the proximity sensor is covered and the screen is off, double tap to wake and touchscreen gestures are ignored. If the device wakes up anyway, touches and the on-screen fingerprint sensor are blocked until the sensor is uncovered, and the screen turns off again if it stays covered. Press and hold the screen to dismiss it.</string>
+    <string name="pocket_mode_not_supported">Pocket mode isn\'t available on this device</string>
     <string name="pocket_mode_overlay_title">Pocket mode</string>
     <string name="pocket_mode_overlay_summary">Don\'t cover the top of the screen.\nPress and hold to dismiss.</string>
 
