@@ -19,14 +19,16 @@ import org.lineageos.settings.R
 /**
  * Full screen window that consumes every touch while the device is in a pocket.
  *
- * TYPE_SECURE_SYSTEM_OVERLAY sits above the keyguard and SystemUI's UDFPS overlay, so touches
- * never reach the lockscreen or apps. The fingerprint sensor doesn't need touches to capture,
- * see PocketFingerprintBlocker.
+ * TYPE_KEYGUARD_DIALOG sits above the keyguard and SystemUI's UDFPS overlay, and unlike
+ * TYPE_SECURE_SYSTEM_OVERLAY the policy lets it receive touch events, so a hold dismisses
+ * the overlay. The fingerprint sensor doesn't need touches to capture, see
+ * PocketFingerprintBlocker.
  */
 internal class PocketModeOverlay(
     private val context: Context,
     private val dismissHoldMs: Int,
     private val onDismissed: () -> Unit,
+    private val onTouched: () -> Unit,
 ) {
     private val windowManager = context.getSystemService(WindowManager::class.java)!!
     private val handler = Handler(Looper.getMainLooper())
@@ -40,7 +42,7 @@ internal class PocketModeOverlay(
     private val layoutParams = WindowManager.LayoutParams(
         WindowManager.LayoutParams.MATCH_PARENT,
         WindowManager.LayoutParams.MATCH_PARENT,
-        WindowManager.LayoutParams.TYPE_SECURE_SYSTEM_OVERLAY,
+        WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -51,8 +53,6 @@ internal class PocketModeOverlay(
         layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         fitInsetsTypes = 0
-        privateFlags = privateFlags or
-                WindowManager.LayoutParams.SYSTEM_FLAG_SHOW_FOR_ALL_USERS
     }
 
     @SuppressLint("ClickableViewAccessibility", "InflateParams")
@@ -60,13 +60,15 @@ internal class PocketModeOverlay(
         if (view != null) return
         view = LayoutInflater.from(context).inflate(R.layout.pocket_mode_overlay, null).apply {
             setOnTouchListener { _, event ->
-                if (dismissHoldMs > 0) {
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        onTouched()
+                        if (dismissHoldMs > 0) {
                             handler.postDelayed(dismissRunnable, dismissHoldMs.toLong())
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                            handler.removeCallbacks(dismissRunnable)
+                        }
                     }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                        handler.removeCallbacks(dismissRunnable)
                 }
                 true // swallow everything
             }

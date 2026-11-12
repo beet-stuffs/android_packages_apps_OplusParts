@@ -93,10 +93,18 @@ class PocketModeService : Service(), SensorEventListener {
         powerManager = getSystemService(PowerManager::class.java)!!
         sensorManager = getSystemService(SensorManager::class.java)!!
         fingerprintBlocker = PocketFingerprintBlocker(this)
-        overlay = PocketModeOverlay(this, resources.getInteger(R.integer.config_pocketModeDismissHoldMs)) {
-            Log.i(TAG, "overlay dismissed by the user")
-            hideOverlay()
-        }
+        overlay = PocketModeOverlay(
+            this,
+            resources.getInteger(R.integer.config_pocketModeDismissHoldMs),
+            onDismissed = {
+                Log.i(TAG, "overlay dismissed by the user")
+                hideOverlay()
+            },
+            onTouched = {
+                // The user is interacting with the overlay: don't fall asleep mid-hold.
+                restartSleepTimeout()
+            },
+        )
 
         sensor = findSensor(this)
         wakeCheckTimeoutMs = resources.getInteger(R.integer.config_pocketModeWakeCheckTimeoutMs).toLong()
@@ -216,11 +224,14 @@ class PocketModeService : Service(), SensorEventListener {
         Log.i(TAG, "woke up in the pocket, blocking touches")
         handler.removeCallbacks(stopWakeCheckRunnable)
         overlay.show()
-        if (sleepTimeoutMs > 0) {
-            handler.removeCallbacks(sleepRunnable)
-            handler.postDelayed(sleepRunnable, sleepTimeoutMs)
-        }
+        restartSleepTimeout()
         updateSensorRegistration()
+    }
+
+    // (Re)start the timer that puts the device back to sleep if it is still in the pocket.
+    private fun restartSleepTimeout() {
+        handler.removeCallbacks(sleepRunnable)
+        if (sleepTimeoutMs > 0) handler.postDelayed(sleepRunnable, sleepTimeoutMs)
     }
 
     private fun hideOverlay() {
