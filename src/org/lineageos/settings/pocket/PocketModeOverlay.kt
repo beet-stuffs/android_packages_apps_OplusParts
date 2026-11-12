@@ -26,7 +26,6 @@ import org.lineageos.settings.R
  */
 internal class PocketModeOverlay(
     private val context: Context,
-    private val dismissHoldMs: Int,
     private val onDismissed: () -> Unit,
     private val onTouched: () -> Unit,
 ) {
@@ -63,9 +62,7 @@ internal class PocketModeOverlay(
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         onTouched()
-                        if (dismissHoldMs > 0) {
-                            handler.postDelayed(dismissRunnable, dismissHoldMs.toLong())
-                        }
+                        handler.postDelayed(dismissRunnable, DISMISS_HOLD_MS)
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
                         handler.removeCallbacks(dismissRunnable)
@@ -80,5 +77,10 @@ internal class PocketModeOverlay(
         handler.removeCallbacks(dismissRunnable)
         view?.let { windowManager.removeViewImmediate(it) }
         view = null
+    }
+
+    private companion object {
+        // Press and hold duration that dismisses the overlay, for a covered or faulty sensor.
+        const val DISMISS_HOLD_MS = 1500L
     }
 }

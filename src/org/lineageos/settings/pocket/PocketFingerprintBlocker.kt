@@ -73,8 +73,5 @@ internal class PocketFingerprintBlocker(context: Context) {
             Settings.Secure.BIOMETRIC_KEYGUARD_ENABLED,
             Settings.Secure.FINGERPRINT_KEYGUARD_ENABLED,
         )
-
-        // Put the user's settings back if we were blocking when the device went down.
-        fun restoreIfNeeded(context: Context) = PocketFingerprintBlocker(context).restore()
     }
 }

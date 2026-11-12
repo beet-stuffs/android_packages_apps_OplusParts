@@ -31,13 +31,12 @@ class PocketModeEntriesProvider : EntriesProvider() {
         override fun isSwitchChecked() = PocketModeService.isEnabled(context)
 
         override fun onSwitchCheckedChanged(checked: Boolean): Boolean {
-            if (!PocketModeService.isSupported(context)) return false
             PocketModeService.setEnabled(context, checked)
             return true
         }
 
-        override fun getSwitchErrorMessage(attemptedChecked: Boolean) =
-            context.getString(R.string.pocket_mode_not_supported)
+        // Unsupported devices have the entry hidden, see SettingsEntries.
+        override fun getSwitchErrorMessage(attemptedChecked: Boolean) = ""
 
         companion object {
             private const val KEY = "pocket_mode"

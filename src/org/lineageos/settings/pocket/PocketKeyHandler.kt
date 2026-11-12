@@ -46,16 +46,6 @@ class PocketKeyHandler(private val context: Context) : DeviceKeyHandler {
     }
 
     private val sensor: Sensor? = packageContext?.let { PocketModeService.findSensor(it) }
-    private val defaultEnabled = packageContext?.let {
-        it.resources.getBoolean(org.lineageos.settings.R.bool.config_pocketModeDefaultEnabled)
-    } ?: false
-
-    // Input devices that send gesture keys without being the touchscreen itself.
-    private val extraGestureDevices: Set<String> = packageContext?.let {
-        it.resources.getStringArray(
-            org.lineageos.settings.R.array.config_pocketModeGestureInputDevices
-        ).toSet()
-    } ?: emptySet()
 
     @Volatile private var enabled = false
     private var sensorRegistered = false
@@ -95,10 +85,7 @@ class PocketKeyHandler(private val context: Context) : DeviceKeyHandler {
     }
 
     private fun updateEnabled() {
-        enabled = Settings.System.getIntForUser(
-            context.contentResolver, PocketModeService.KEY_POCKET_MODE,
-            if (defaultEnabled) 1 else 0, UserHandle.USER_CURRENT
-        ) != 0
+        enabled = packageContext?.let { PocketModeService.isEnabled(it) } == true
         updateSensorRegistration()
     }
 
@@ -124,8 +111,7 @@ class PocketKeyHandler(private val context: Context) : DeviceKeyHandler {
         if (event.action == KeyEvent.ACTION_UP && droppedKeys.remove(keyCode)) {
             return null
         }
-        if (event.action == KeyEvent.ACTION_DOWN && enabled && near &&
-                !powerManager.isInteractive) {
+        if (event.action == KeyEvent.ACTION_DOWN && near && !powerManager.isInteractive) {
             Log.i(TAG, "In a pocket, dropping touchscreen key ${KeyEvent.keyCodeToString(keyCode)}")
             droppedKeys.add(keyCode)
             return null
@@ -134,9 +120,8 @@ class PocketKeyHandler(private val context: Context) : DeviceKeyHandler {
     }
 
     private fun isFromTouchscreen(event: KeyEvent): Boolean {
-        val device = InputDevice.getDevice(event.deviceId) ?: return false
-        return device.supportsSource(InputDevice.SOURCE_TOUCHSCREEN) ||
-                device.name in extraGestureDevices
+        return InputDevice.getDevice(event.deviceId)
+            ?.supportsSource(InputDevice.SOURCE_TOUCHSCREEN) == true
     }
 
     companion object {
